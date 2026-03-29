@@ -1,8 +1,6 @@
 # 🗄️ MonkeyDo Database Schema Specification
 
-This schema is designed for a high-performance language learning app. It uses
-**UUIDs** for primary keys, supports **Soft Deletes** (`deleted_at`), and
-follows a flexible structure for lessons (Home vs. Folders).
+This schema is designed for a high-performance language learning app. It uses **UUIDs** for primary keys, supports **Soft Deletes** (`deleted_at`), and structures lesson targets as **JSONB** to natively support synonym matching and zero-latency frontend validation.
 
 ---
 
@@ -34,7 +32,7 @@ follows a flexible structure for lessons (Home vs. Folders).
 | `folder_id` | UUID | FK -> folders.id, **Nullable** | If NULL, lesson appears in "Home". |
 | `title` | String | Not Null | Name of the lesson/video title. |
 | `text_source` | Text | Not Null | Row A: The source text (e.g., English). |
-| `text_target` | Text | Not Null | Row B: The correct translation (e.g., German). |
+| `target_data` | JSONB | Not Null | Row B: Structured array containing primary words and their synonyms `{ index, primary, synonyms[] }`. |
 | `created_at` | DateTime | Default: now() | When the lesson was generated/created. |
 | `updated_at` | DateTime | Default: now() | Last edit timestamp. |
 | `deleted_at` | DateTime | Nullable | Soft delete timestamp. |
@@ -54,8 +52,9 @@ follows a flexible structure for lessons (Home vs. Folders).
 | :--- | :--- | :--- | :--- |
 | `id` | UUID | PK, Default: gen_random_uuid() | Unique ID for the event. |
 | `session_id` | UUID | FK -> game_sessions.id, Not Null | Link to the parent game session. |
-| `word_index` | Integer | Not Null | Position of the word in the sentence. |
-| `word` | String | Not Null | The word itself. |
+| `word_index` | Integer | Not Null | Position of the word in the sentence array. |
+| `typed_word` | String | Not Null | The actual word the user typed (primary or synonym). |
+| `is_synonym` | Boolean | Default: false | True if they matched a synonym instead of the primary word. |
 | `status` | String | "correct", "ok", "wrong" | The result of the guess. |
 | `attempts` | Integer | Default: 1 | How many tries before correct submission. |
 | `latency_ms` | Integer | Not Null | Speed of the correct submission. |
@@ -75,4 +74,4 @@ follows a flexible structure for lessons (Home vs. Folders).
 1. **Soft Deletes:** Never `DELETE` rows. Set `deleted_at = now()` to hide items from the UI.
 2. **Home Directory:** A `lesson` with `folder_id = NULL` is considered a root-level item.
 3. **Session Logic:** A `game_session` is immutable once the time runs out.
-4. **AI Latency:** `analytics_tips` are generated asynchronously after `game_session` is finalized.
+4. **AI Latency:** `analytics_tips` are generated asynchronously after `game_session` is finalized, leveraging the `is_synonym` flags to give nuanced feedback.
