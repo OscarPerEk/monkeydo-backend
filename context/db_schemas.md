@@ -1,6 +1,8 @@
-# 🗄️ MonkeyDo Database Schema Specification
+# MonkeyDo Database Schema Specification
 
-This schema is designed for a high-performance language learning app. It uses **UUIDs** for primary keys, supports **Soft Deletes** (`deleted_at`), and structures lesson targets as **JSONB** to natively support synonym matching and zero-latency frontend validation.
+This schema is designed for a high-performance language learning app. It uses **UUIDs** for primary keys, supports **Soft Deletes** (`deleted_at`), and structures lesson targets as **JSONB** for zero-latency frontend validation.
+
+**Database:** PostgreSQL on AWS RDS (`oscars-db.cxye2ao0gk53.eu-central-1.rds.amazonaws.com`), currently using the `postgres` database (not a separate `monkeydo` db).
 
 ---
 
@@ -30,14 +32,14 @@ This schema is designed for a high-performance language learning app. It uses **
 | `id` | UUID | PK, Default: gen_random_uuid() | Unique identifier for the lesson. |
 | `user_id` | UUID | FK -> users.id, Not Null | Owner of the lesson. |
 | `folder_id` | UUID | FK -> folders.id, **Nullable** | If NULL, lesson appears in "Home". |
-| `title` | String | Not Null | Name of the lesson/video title. |
-| `source_language` | String | Not Null, Default: 'en' | BCP-47 language code for the source (e.g. "en", "fr"). |
-| `target_language` | String | Not Null, Default: 'de' | BCP-47 language code for the language being learned (e.g. "de", "es"). |
-| `text_source` | Text | Not Null | Row A: The full source text. Frontend splits into sentences/chunks for display. |
-| `target_data` | JSONB | Not Null | Row B: Flat array of all target words. Schema: `{ index, sentence_index, source_word_index, primary, synonyms[] }`. `sentence_index` groups words into rows. `source_word_index` maps each target word to its 0-based position in the corresponding source sentence, enabling word-level EN↔DE alignment and optional sentence reordering. |
+| `title` | String | Not Null | Name of the lesson. |
+| `text_source` | Text | Not Null | The full source text (English). Frontend splits into sentences. |
+| `target_data` | JSONB | Not Null | Flat array of target words. Schema: `{ index, sentence_index, source_word_index, word }`. No synonyms — one word per slot. |
 | `created_at` | DateTime | Default: now() | When the lesson was generated/created. |
 | `updated_at` | DateTime | Default: now() | Last edit timestamp. |
 | `deleted_at` | DateTime | Nullable | Soft delete timestamp. |
+
+**Removed (2026-04-21):** `source_language` and `target_language` columns were dropped to simplify the schema. Synonyms were removed from `target_data` — the goal is to learn to write in the exact style of the source material.
 
 ## 4. `game_sessions`
 | Column | Type | Constraints | Description |
@@ -45,8 +47,8 @@ This schema is designed for a high-performance language learning app. It uses **
 | `id` | UUID | PK, Default: gen_random_uuid() | Unique ID for a single play-through. |
 | `lesson_id` | UUID | FK -> lessons.id, Not Null | Which lesson was played. |
 | `user_id` | UUID | FK -> users.id, Not Null | Who played the game. |
-| `difficulty` | String | "easy", "medium", "hard" | The difficulty setting chosen. |
-| `duration_seconds`| Integer | 60 - 600 | Length of the test (1 to 10 mins). |
+| `difficulty` | String | CHECK: "easy", "medium", "hard" | The difficulty setting chosen. |
+| `duration_seconds`| Integer | CHECK: 60 - 600 | Length of the test (1 to 10 mins). |
 | `created_at` | DateTime | Default: now() | When the game was played. |
 
 ## 5. `word_history`
@@ -54,12 +56,13 @@ This schema is designed for a high-performance language learning app. It uses **
 | :--- | :--- | :--- | :--- |
 | `id` | UUID | PK, Default: gen_random_uuid() | Unique ID for the event. |
 | `session_id` | UUID | FK -> game_sessions.id, Not Null | Link to the parent game session. |
-| `word_index` | Integer | Not Null | Position of the word in the sentence array. |
-| `typed_word` | String | **Nullable** | The actual word the user typed. NULL if the word was skipped. |
-| `is_synonym` | Boolean | Default: false | True if they matched a synonym instead of the primary word. |
-| `status` | String | "correct", "ok", "wrong", "skipped" | Result: `correct`=exact match, `ok`=≥50% prefix match, `wrong`=rejected guess, `skipped`=Tab/Shift+Tab used (never attempted). |
-| `attempts` | Integer | Default: 1 | Tries before correct submission. 0 for skipped words. |
-| `latency_ms` | Integer | **Nullable** | Speed of the correct submission in ms. NULL for skipped or pre-filled words. |
+| `word_index` | Integer | Not Null | Position of the word in the target_data array. |
+| `typed_word` | String | **Not Null** | The actual word the user typed. |
+| `status` | String | CHECK: "correct", "ok", "wrong" | Result: `correct`=exact match, `ok`=shared prefix >=50%, `wrong`=rejected guess. |
+| `attempts` | Integer | Default: 1 | Tries before correct submission. |
+| `latency_ms` | Integer | **Not Null** | Speed of the correct submission in ms. |
+
+**Removed (2026-04-21):** `is_synonym` column dropped. `skipped` status removed — skipped words are simply not recorded in history. `typed_word` and `latency_ms` are now NOT NULL.
 
 ## 6. `analytics_tips`
 | Column | Type | Constraints | Description |
@@ -67,13 +70,16 @@ This schema is designed for a high-performance language learning app. It uses **
 | `id` | UUID | PK, Default: gen_random_uuid() | Unique identifier for the tip. |
 | `session_id` | UUID | FK -> game_sessions.id, Not Null | Link to the specific game performance. |
 | `content` | Text | Not Null | AI-generated Markdown tips/explanations. |
-| `category` | String | "grammar", "vocab", "nuance" | Type of feedback provided. |
+| `category` | String | CHECK: "grammar", "vocab", "nuance" | Type of feedback provided. |
 | `created_at` | DateTime | Default: now() | When the feedback was generated. |
 
 ---
 
-## 🚦 System Rules
+## System Rules
 1. **Soft Deletes:** Never `DELETE` rows. Set `deleted_at = now()` to hide items from the UI.
 2. **Home Directory:** A `lesson` with `folder_id = NULL` is considered a root-level item.
 3. **Session Logic:** A `game_session` is immutable once the time runs out.
-4. **AI Latency:** `analytics_tips` are generated asynchronously after `game_session` is finalized, leveraging the `is_synonym` flags to give nuanced feedback.
+4. **AI Latency:** `analytics_tips` are generated asynchronously after `game_session` is finalized.
+
+## Extra Tables (not part of core app)
+The database also contains `context_rules`, `my_table`, and `news_feed` — these are unrelated to MonkeyDo and should be ignored.

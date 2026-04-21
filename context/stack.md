@@ -1,55 +1,51 @@
 # MonkeyDo Tech Stack (AWS-Native)
 
 ## Frontend
-- **Framework:** Next.js (React)
-- **Deployment:** **AWS Amplify Hosting**. 
-    - *Why:* It's the AWS version of Vercel. It connects to your GitHub, builds
-    your Next.js app, and hosts it on a global CDN automatically.
+- **Framework:** Next.js 16 (React 19) with TypeScript
+- **Styling:** Tailwind CSS 4
+- **Deployment:** **AWS Amplify Hosting**
+- **Dev:** `make start` (runs `npm run dev` on port 3000)
 
 ## Backend
 - **Framework:** FastAPI (Python 3.12+)
-- **Deployment:** **AWS App Runner**.
-    - *Why:* It's the simplest way to run a container. It handles the Load
-    Balancer and "Auto-scaling" out of the box. You don't have to manage
-    servers.
+- **ORM:** SQLAlchemy 2.0 (async with asyncpg)
+- **Migrations:** Alembic
+- **Deployment:** **AWS App Runner** (containerized with Docker)
+- **Dev:** `make start` (runs `uvicorn app.main:app --reload` on port 8000)
 
 ## Database
 - **Engine:** PostgreSQL 16
-- **Provider:** **AWS RDS**.
-    - *Why:* Reliable, managed backups, and fits in the Free Tier for 12
-    months.
+- **Provider:** **AWS RDS** (`oscars-db.cxye2ao0gk53.eu-central-1.rds.amazonaws.com`)
+- **Database name:** `postgres` (not a separate monkeydo db)
+- **Connection:** Backend connects via `DATABASE_URL` in `.env`
 
 ## Infrastructure
-- **Storage:** AWS S3 (For storing processed audio/transcripts later).
-- **Domain/SSL:** Managed automatically by Amplify and App Runner.
+- **Storage:** AWS S3 (planned — for processed audio/transcripts)
+- **Domain/SSL:** Managed automatically by Amplify and App Runner
 
-## Auth (Planned — Post-MVP)
+## Auth (Planned -- Post-MVP)
 - **Provider:** AWS Cognito
-    - *Why:* Native to the AWS stack, generous free tier, integrates cleanly
-    with App Runner and RDS. Not needed for MVP (single hardcoded user), but
-    the architecture should leave a clean seam to add it later.
+- **Current:** Single hardcoded user (`DEFAULT_USER_ID`)
 
 ## Matching Logic (Engine Rules)
-- **Correct (Green):** Typed word is an exact match to `primary` or any entry
-in `synonyms[]`.
-- **Partial / Found (Yellow):** ≥50% of characters overlap with the best
-unguessed candidate. The word is considered **found** (accepted) at this
-threshold.
-- **Incorrect (Red):** <50% overlap. Input box flashes red and clears.
+- **Correct (Green):** Typed word is an exact case-insensitive match.
+- **Partial (Yellow):** Shared prefix between typed input and target word covers
+  >=50% of the target word's length. e.g. "heutsssss" matches "heute" because
+  shared prefix "heut" = 4/5 = 80%. Shown as yellow prefix + red missing chars.
+- **Incorrect (Red):** Shared prefix <50%. Input box flashes red and clears.
 - **Order:** Typing is order-free. The engine checks the input against **all
-unguessed word slots**. The slot with the highest character overlap (≥50%)
-wins. If multiple slots tie, the leftmost (lowest index) is selected.
+  unguessed word slots**. Best coverage wins. Leftmost wins on tie.
 - **Status mapping in `word_history`:** `correct` = exact match, `ok` = 50%+
-prefix match, `wrong` = rejected guess, `skipped` = word was skipped.
+  prefix match, `wrong` = rejected guess.
 
 ## Skip Mechanic
-- **Tab** — skip current word: reveal it immediately, advance to next word.
-  Recorded as `status='skipped'`, `typed_word=NULL`, `latency_ms=NULL`, `attempts=0`.
-  Next keypress resumes input for the next unguessed word.
-- **Shift+Tab** — skip entire current sentence: all remaining unguessed words in
-  the row reveal at once, all recorded as `status='skipped'`. Advances to next
-  sentence.
+- **Tab** -- skip current word: reveal it immediately, not recorded in history.
+- **Shift+Tab** -- skip entire sentence: all remaining words reveal, not recorded.
+
+## Sentence Transitions
+- When all words in a sentence are revealed, the answer stays visible for **3
+  seconds** (timer frozen) before advancing to the next sentence.
 
 ## Layout
-- **Single-page app.** Sidebar is always visible on the left. Clicking a lesson
-  loads the engine in the right panel — no page navigation.
+- **Single-page app.** Sidebar always visible on left. Clicking a lesson loads
+  the engine in the right panel -- no page navigation.
