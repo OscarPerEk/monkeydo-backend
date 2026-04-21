@@ -25,6 +25,6 @@ class Folder(Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
-    lessons: Mapped[list] = relationship(
+    lessons: Mapped[list["Lesson"]] = relationship(
         "Lesson", back_populates="folder", lazy="selectin"
     )
