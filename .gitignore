@@ -1,1 +1,17 @@
-.idea
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store

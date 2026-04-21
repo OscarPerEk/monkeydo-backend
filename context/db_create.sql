@@ -38,12 +38,19 @@ CREATE TABLE IF NOT EXISTS folders (
 );
 
 -- 3. Table: lessons
--- target_data stores: [{ "index": 0, "primary": "hello", "synonyms": ["hi", "greetings"] }]
+-- target_data stores:
+--   [{ "index": 0, "sentence_index": 0, "source_word_index": 1, "primary": "Ich", "synonyms": [] }, ...]
+-- sentence_index  → groups words into display rows (one sentence at a time)
+-- source_word_index → 0-based position of the mapped word in the source sentence
+--                     enables word-level EN↔DE alignment and optional reordering
+-- source_language / target_language use BCP-47 codes (e.g. "en", "de", "fr", "es").
 CREATE TABLE IF NOT EXISTS lessons (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     folder_id UUID REFERENCES folders(id) ON DELETE SET NULL,
     title TEXT NOT NULL,
+    source_language TEXT NOT NULL DEFAULT 'en',
+    target_language TEXT NOT NULL DEFAULT 'de',
     text_source TEXT NOT NULL,
     target_data JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
@@ -66,11 +73,11 @@ CREATE TABLE IF NOT EXISTS word_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id UUID NOT NULL REFERENCES game_sessions(id) ON DELETE CASCADE,
     word_index INTEGER NOT NULL,
-    typed_word TEXT NOT NULL,
+    typed_word TEXT,                    -- NULL for skipped words
     is_synonym BOOLEAN DEFAULT false,
-    status TEXT CHECK (status IN ('correct', 'ok', 'wrong')),
-    attempts INTEGER DEFAULT 1,
-    latency_ms INTEGER NOT NULL
+    status TEXT CHECK (status IN ('correct', 'ok', 'wrong', 'skipped')),
+    attempts INTEGER DEFAULT 1,         -- 0 for skipped words
+    latency_ms INTEGER                  -- NULL for skipped or pre-filled words
 );
 
 -- 6. Table: analytics_tips

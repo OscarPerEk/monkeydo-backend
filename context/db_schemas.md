@@ -31,8 +31,10 @@ This schema is designed for a high-performance language learning app. It uses **
 | `user_id` | UUID | FK -> users.id, Not Null | Owner of the lesson. |
 | `folder_id` | UUID | FK -> folders.id, **Nullable** | If NULL, lesson appears in "Home". |
 | `title` | String | Not Null | Name of the lesson/video title. |
-| `text_source` | Text | Not Null | Row A: The source text (e.g., English). |
-| `target_data` | JSONB | Not Null | Row B: Structured array containing primary words and their synonyms `{ index, primary, synonyms[] }`. |
+| `source_language` | String | Not Null, Default: 'en' | BCP-47 language code for the source (e.g. "en", "fr"). |
+| `target_language` | String | Not Null, Default: 'de' | BCP-47 language code for the language being learned (e.g. "de", "es"). |
+| `text_source` | Text | Not Null | Row A: The full source text. Frontend splits into sentences/chunks for display. |
+| `target_data` | JSONB | Not Null | Row B: Flat array of all target words. Schema: `{ index, sentence_index, source_word_index, primary, synonyms[] }`. `sentence_index` groups words into rows. `source_word_index` maps each target word to its 0-based position in the corresponding source sentence, enabling word-level EN↔DE alignment and optional sentence reordering. |
 | `created_at` | DateTime | Default: now() | When the lesson was generated/created. |
 | `updated_at` | DateTime | Default: now() | Last edit timestamp. |
 | `deleted_at` | DateTime | Nullable | Soft delete timestamp. |
@@ -53,11 +55,11 @@ This schema is designed for a high-performance language learning app. It uses **
 | `id` | UUID | PK, Default: gen_random_uuid() | Unique ID for the event. |
 | `session_id` | UUID | FK -> game_sessions.id, Not Null | Link to the parent game session. |
 | `word_index` | Integer | Not Null | Position of the word in the sentence array. |
-| `typed_word` | String | Not Null | The actual word the user typed (primary or synonym). |
+| `typed_word` | String | **Nullable** | The actual word the user typed. NULL if the word was skipped. |
 | `is_synonym` | Boolean | Default: false | True if they matched a synonym instead of the primary word. |
-| `status` | String | "correct", "ok", "wrong" | The result of the guess. |
-| `attempts` | Integer | Default: 1 | How many tries before correct submission. |
-| `latency_ms` | Integer | Not Null | Speed of the correct submission. |
+| `status` | String | "correct", "ok", "wrong", "skipped" | Result: `correct`=exact match, `ok`=≥50% prefix match, `wrong`=rejected guess, `skipped`=Tab/Shift+Tab used (never attempted). |
+| `attempts` | Integer | Default: 1 | Tries before correct submission. 0 for skipped words. |
+| `latency_ms` | Integer | **Nullable** | Speed of the correct submission in ms. NULL for skipped or pre-filled words. |
 
 ## 6. `analytics_tips`
 | Column | Type | Constraints | Description |

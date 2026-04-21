@@ -30,8 +30,9 @@ data persistence.
 ## 🏗 Core System Architecture
 
 ### 1. The "Zen" Workspace (Sidebar Navigation)
-* **Structure:** A vertical sidebar on the right/left (inspired by Zen
-Browser).
+* **Layout:** Single-page app. The sidebar is always visible on the left.
+  Clicking a lesson loads the engine in the right panel — no page navigation.
+* **Structure:** A vertical sidebar inspired by Zen Browser.
 * **Hierarchy:** Nested Folder/Item system. 
     * *Example:* `Folder: Medical German` -> `Lesson: Cardiology Terms`.
 * **UX:** Drag-and-drop reordering; right-click context menus for
@@ -49,6 +50,9 @@ alternatives.
     * **Matching:** Words can be guessed out of order. The engine checks the
     input against an array of acceptable words (primary + synonyms) for each
     position.
+    * **Skipping:** `Tab` skips the current word (reveals it immediately).
+    `Shift+Tab` skips the entire current sentence. After a skip the next
+    keypress continues input as normal.
 * **The Reveal (Vertical List UI):**
     * When a user successfully types a valid word, the position reveals.
     * If there are synonyms, they expand vertically downwards from that word
