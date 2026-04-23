@@ -15,19 +15,20 @@ You will receive German text (possibly with typos or formatting issues).
 
 Your job:
 1. Fix any spelling or grammar errors in the German text.
-2. Split the text into SHORT chunks using | as delimiter.
-3. Each chunk should be a small, typeable snippet (3-8 words ideally).
-4. Split at logical points: subclauses, commas, conjunctions, or natural pauses.
-5. It's OK to split mid-sentence if the sentence is long.
-6. Keep the original meaning and style intact.
-7. Do NOT add or remove content — only fix errors and insert | delimiters.
-8. Generate a short, descriptive title (2-5 words) that captures the topic.
+2. Split the text into chunks using | as delimiter.
+3. Each chunk should be a meaningful phrase or clause (5-12 words typically).
+4. Split at natural clause boundaries: before conjunctions (weil, dass, aber, also, wenn), at commas, or between sentences.
+5. Keep full subclauses together — do NOT split in the middle of a clause.
+6. Short sentences (under 10 words) should stay as one chunk, not be split further.
+7. Keep the original meaning and style intact.
+8. Do NOT add or remove content — only fix errors and insert | delimiters.
+9. Generate a short, descriptive title (2-5 words) that captures the topic.
 
 Example input:
-"Ich bin gestern in die Stadt gefahren weil ich einen neuen Laptop kaufen wollte. Der Laden hatte leider geschlossen also bin ich ins Café gegangen."
+"Ich bin gestern in die Stadt gefahren weil ich einen neuen Laptop kaufen wollte. Der Laden hatte leider geschlossen also bin ich ins Café gegangen und habe einen Kaffee getrunken."
 
 Example output:
-"Ich bin gestern in die Stadt gefahren | weil ich einen neuen Laptop kaufen wollte. | Der Laden hatte leider geschlossen | also bin ich ins Café gegangen."
+"Ich bin gestern in die Stadt gefahren | weil ich einen neuen Laptop kaufen wollte. | Der Laden hatte leider geschlossen | also bin ich ins Café gegangen und habe einen Kaffee getrunken."
 """
 
 TRANSLATE_PROMPT = """\
@@ -39,6 +40,23 @@ Each German chunk must map 1:1 to an English chunk.
 Keep translations natural but faithful to the original.
 
 {user_instructions}
+"""
+
+VERIFY_PROMPT = """\
+You are a quality checker for a language learning app.
+
+You will receive German chunks and English chunks separated by |.
+Each German chunk should correspond 1:1 with its English chunk at the same position.
+
+Check for these issues:
+1. Misaligned translations (German chunk N doesn't match English chunk N)
+2. Missing or extra chunks on either side
+3. Translation errors or unnatural phrasing
+
+If there are issues, return corrected versions of BOTH the German and English text (with | delimiters).
+If everything looks good, return the input unchanged.
+
+IMPORTANT: The number of | delimiters must be EXACTLY the same in both german_text and english_text.
 """
 
 EXCLUDE_PROMPT = """\
@@ -62,6 +80,11 @@ class CleanedText(BaseModel):
 
 class TranslatedText(BaseModel):
     english_text: str  # English text with | delimiters
+
+
+class VerifiedPair(BaseModel):
+    german_text: str   # corrected German with | delimiters
+    english_text: str  # corrected English with | delimiters
 
 
 class ExcludedWords(BaseModel):
@@ -137,10 +160,26 @@ async def generate_lesson(german_text: str, prompt: str) -> GeneratedLesson:
     translated = translate_response.choices[0].message.parsed
     logger.info("Step 2 done: english=%s", translated.english_text[:80])
 
-    # Step 3 (optional): Determine excluded words if user prompt suggests it
+    # Step 3: Verify alignment and fix issues
+    logger.info("Step 3: Verifying alignment...")
+    verify_response = await client.beta.chat.completions.parse(
+        model=model,
+        messages=[
+            {"role": "system", "content": VERIFY_PROMPT},
+            {"role": "user", "content": f"German:\n{cleaned.cleaned_text}\n\nEnglish:\n{translated.english_text}"},
+        ],
+        response_format=VerifiedPair,
+    )
+    verified = verify_response.choices[0].message.parsed
+    german_final = verified.german_text
+    english_final = verified.english_text
+    logger.info("Step 3 done: DE chunks=%d, EN chunks=%d",
+                german_final.count("|") + 1, english_final.count("|") + 1)
+
+    # Step 4 (optional): Determine excluded words if user prompt suggests it
     excluded_words: set[str] = set()
     if prompt.strip():
-        german_chunks = [c.strip() for c in cleaned.cleaned_text.split("|") if c.strip()]
+        german_chunks = [c.strip() for c in german_final.split("|") if c.strip()]
         all_words = set()
         for chunk in german_chunks:
             for token in chunk.split():
@@ -148,7 +187,7 @@ async def generate_lesson(german_text: str, prompt: str) -> GeneratedLesson:
                 if clean:
                     all_words.add(clean)
 
-        logger.info("Step 3: Checking for excluded words...")
+        logger.info("Step 4: Checking for excluded words...")
         exclude_response = await client.beta.chat.completions.parse(
             model=model,
             messages=[
@@ -158,14 +197,14 @@ async def generate_lesson(german_text: str, prompt: str) -> GeneratedLesson:
             response_format=ExcludedWords,
         )
         excluded_words = set(exclude_response.choices[0].message.parsed.words)
-        logger.info("Step 3 done: excluded=%s", excluded_words)
+        logger.info("Step 4 done: excluded=%s", excluded_words)
 
     # Build the lesson deterministically
-    german_chunks = [c.strip() for c in cleaned.cleaned_text.split("|") if c.strip()]
+    german_chunks = [c.strip() for c in german_final.split("|") if c.strip()]
     target_data = _build_target_data(german_chunks, excluded_words)
 
     return GeneratedLesson(
         title=cleaned.title,
-        text_source=translated.english_text,
+        text_source=english_final,
         target_data=target_data,
     )
