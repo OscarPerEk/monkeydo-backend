@@ -7,6 +7,7 @@ class TargetWord(BaseModel):
     index: int
     sentence_index: int
     word: str
+    excluded: bool = False
 
 
 class LessonDetail(BaseModel):

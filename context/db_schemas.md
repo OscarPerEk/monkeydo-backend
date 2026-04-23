@@ -33,13 +33,15 @@ This schema is designed for a high-performance language learning app. It uses **
 | `user_id` | UUID | FK -> users.id, Not Null | Owner of the lesson. |
 | `folder_id` | UUID | FK -> folders.id, **Nullable** | If NULL, lesson appears in "Home". |
 | `title` | String | Not Null | Name of the lesson. |
-| `text_source` | Text | Not Null | The full source text (English). Frontend splits into sentences. |
-| `target_data` | JSONB | Not Null | Flat array of target words. Schema: `{ index, sentence_index, source_word_index, word }`. No synonyms — one word per slot. |
+| `text_source` | Text | Not Null | English text with `|` delimiters between chunks. Frontend splits on `|`. |
+| `target_data` | JSONB | Not Null | Flat array of target words. Schema: `{ index, sentence_index, word, excluded }`. `excluded: true` = pre-revealed (blue), not practiced. |
 | `created_at` | DateTime | Default: now() | When the lesson was generated/created. |
 | `updated_at` | DateTime | Default: now() | Last edit timestamp. |
 | `deleted_at` | DateTime | Nullable | Soft delete timestamp. |
 
 **Removed (2026-04-21):** `source_language` and `target_language` columns were dropped to simplify the schema. Synonyms were removed from `target_data` — the goal is to learn to write in the exact style of the source material.
+
+**Added (2026-04-23):** `excluded` boolean field in `target_data` JSONB. Words marked as excluded are shown in blue and pre-revealed during gameplay. Can be set by LLM via prompt or manually toggled in the create/edit UI. `text_source` now uses `|` as chunk delimiter instead of sentence-ending punctuation.
 
 ## 4. `game_sessions`
 | Column | Type | Constraints | Description |

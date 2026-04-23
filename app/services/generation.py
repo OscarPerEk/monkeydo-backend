@@ -41,6 +41,19 @@ Keep translations natural but faithful to the original.
 {user_instructions}
 """
 
+EXCLUDE_PROMPT = """\
+You are a word filtering assistant for a language learning app.
+
+You will receive a list of German words and user instructions about which words to exclude from practice.
+
+Return the list of words that should be EXCLUDED (not practiced). These are typically:
+- Proper nouns (names of people, cities, countries)
+- Words the user specifically asks to exclude
+- Any category the user mentions
+
+Only return words that match the user's criteria. Return an empty list if nothing matches.
+"""
+
 
 class CleanedText(BaseModel):
     title: str
@@ -51,10 +64,15 @@ class TranslatedText(BaseModel):
     english_text: str  # English text with | delimiters
 
 
+class ExcludedWords(BaseModel):
+    words: list[str]  # words to exclude (case-insensitive matching)
+
+
 class GeneratedTargetWord(BaseModel):
     index: int
     sentence_index: int
     word: str
+    excluded: bool = False
 
 
 class GeneratedLesson(BaseModel):
@@ -63,12 +81,15 @@ class GeneratedLesson(BaseModel):
     target_data: list[GeneratedTargetWord]
 
 
-def _build_target_data(german_chunks: list[str]) -> list[GeneratedTargetWord]:
-    """Deterministically build target_data from German chunks. No LLM needed."""
+def _build_target_data(
+    german_chunks: list[str],
+    excluded_words: set[str] | None = None,
+) -> list[GeneratedTargetWord]:
+    """Deterministically build target_data from German chunks."""
+    excluded_lower = {w.lower() for w in (excluded_words or set())}
     words = []
     global_index = 0
     for sentence_idx, chunk in enumerate(german_chunks):
-        # Split chunk into words, strip punctuation from each word
         for token in chunk.split():
             clean = re.sub(r"[.,;:!?\"'()…\-–—]", "", token).strip()
             if not clean:
@@ -77,6 +98,7 @@ def _build_target_data(german_chunks: list[str]) -> list[GeneratedTargetWord]:
                 index=global_index,
                 sentence_index=sentence_idx,
                 word=clean,
+                excluded=clean.lower() in excluded_lower,
             ))
             global_index += 1
     return words
@@ -115,14 +137,35 @@ async def generate_lesson(german_text: str, prompt: str) -> GeneratedLesson:
     translated = translate_response.choices[0].message.parsed
     logger.info("Step 2 done: english=%s", translated.english_text[:80])
 
+    # Step 3 (optional): Determine excluded words if user prompt suggests it
+    excluded_words: set[str] = set()
+    if prompt.strip():
+        german_chunks = [c.strip() for c in cleaned.cleaned_text.split("|") if c.strip()]
+        all_words = set()
+        for chunk in german_chunks:
+            for token in chunk.split():
+                clean = re.sub(r"[.,;:!?\"'()…\-–—]", "", token).strip()
+                if clean:
+                    all_words.add(clean)
+
+        logger.info("Step 3: Checking for excluded words...")
+        exclude_response = await client.beta.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": EXCLUDE_PROMPT},
+                {"role": "user", "content": f"Words: {', '.join(sorted(all_words))}\n\nUser instructions: {prompt}"},
+            ],
+            response_format=ExcludedWords,
+        )
+        excluded_words = set(exclude_response.choices[0].message.parsed.words)
+        logger.info("Step 3 done: excluded=%s", excluded_words)
+
     # Build the lesson deterministically
     german_chunks = [c.strip() for c in cleaned.cleaned_text.split("|") if c.strip()]
-    english_text = translated.english_text
-
-    target_data = _build_target_data(german_chunks)
+    target_data = _build_target_data(german_chunks, excluded_words)
 
     return GeneratedLesson(
         title=cleaned.title,
-        text_source=english_text,
+        text_source=translated.english_text,
         target_data=target_data,
     )
