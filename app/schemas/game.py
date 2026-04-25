@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -28,3 +29,20 @@ class GameFinishRequest(BaseModel):
 
 class GameFinishResponse(BaseModel):
     ok: bool
+
+
+class GameSessionSummary(BaseModel):
+    id: UUID
+    difficulty: str | None
+    duration_seconds: int | None
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class WordHistoryOut(BaseModel):
+    word_index: int
+    typed_word: str
+    status: str
+    attempts: int
+    latency_ms: int
+    model_config = {"from_attributes": True}

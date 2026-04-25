@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
 
+import sqlalchemy as sa
 from sqlalchemy import ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -31,5 +32,7 @@ class Lesson(Base):
         server_default=func.now(), onupdate=func.now()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    range_start_index: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    range_end_index: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
 
     folder: Mapped["Folder"] = relationship("Folder", back_populates="lessons")

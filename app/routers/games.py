@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,8 +11,10 @@ from app.models.word_history import WordHistory
 from app.schemas.game import (
     GameFinishRequest,
     GameFinishResponse,
+    GameSessionSummary,
     GameStartRequest,
     GameStartResponse,
+    WordHistoryOut,
 )
 
 router = APIRouter()
@@ -54,3 +58,23 @@ async def finish_game(request: GameFinishRequest, db: AsyncSession = Depends(get
     await db.commit()
 
     return GameFinishResponse(ok=True)
+
+
+@router.get("/lessons/{lesson_id}/sessions", response_model=list[GameSessionSummary])
+async def list_sessions(lesson_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(GameSession)
+        .where(GameSession.lesson_id == lesson_id)
+        .order_by(GameSession.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.get("/games/{session_id}/history", response_model=list[WordHistoryOut])
+async def get_history(session_id: UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(WordHistory)
+        .where(WordHistory.session_id == session_id)
+        .order_by(WordHistory.word_index)
+    )
+    return result.scalars().all()

@@ -15,6 +15,8 @@ class LessonDetail(BaseModel):
     title: str
     text_source: str
     target_data: list[TargetWord]
+    range_start_index: int | None = None
+    range_end_index: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -28,6 +30,11 @@ class GenerateResponse(BaseModel):
     title: str
     text_source: str
     target_data: list[TargetWord]
+
+
+class LessonRangeUpdate(BaseModel):
+    start_index: int | None = None
+    end_index: int | None = None
 
 
 class CreateLessonRequest(BaseModel):
